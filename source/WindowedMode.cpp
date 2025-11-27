@@ -400,11 +400,11 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 				inst->SwitchMainMenu(true);
 		}
 
-		inst->WindowUpdateTitle();
+
 
 		// don't touch mouse on Alt+Tab minimize
-		if (!altTabMinimize)
-			inst->MouseUpdate(true);
+		//if (!altTabMinimize)
+			//inst->MouseUpdate(true);
 
 		return result;
 	}
@@ -762,32 +762,7 @@ void WindowedMode::SwitchMainMenu(bool show)
 
 void WindowedMode::MouseUpdate(bool force)
 {
-	// Do nothing when window is minimized – don't touch cursor
-	if (IsIconic(window))
-		return;
-
-	auto hasFocus = HasFocus(window);
-
-	POINT pos;
-	GetCursorPos(&pos);
-
-	RECT rect;
-	GetClientRect(window, &rect);
-	ClientToScreen(window, (LPPOINT)&rect.left);
-	ClientToScreen(window, (LPPOINT)&rect.right);
-
-	// cursor visibility
-	bool inGame = hasFocus && PtInRect(&rect, pos);
-	SetCursorVisible(!inGame);
-
-	// keep cursor inside the window
-	if (hasFocus || force)
-	{
-		if (!hasFocus || IsMainMenuVisible())
-			ClipCursor(NULL);
-		else
-			ClipCursor(&rect);
-	}
+	return;
 }
 
 void WindowedMode::UpdatePostEffect()
