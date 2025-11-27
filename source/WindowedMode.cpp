@@ -50,12 +50,21 @@ HWND __stdcall WindowedMode::InitWindow(DWORD dwExStyle, LPCSTR lpClassName, LPC
 	}
 	inst->oriWindowProc = oriClass.lpfnWndProc;
 
-	inst->InitConfig();
-	bool maximize = inst->LoadConfig();
-	bool center = (inst->windowPos.x == -1) || (inst->windowPos.y == -1);
+	// apply our hardcoded config (no ini)
+	inst->LoadConfig();
+
+	// Force borderless fullscreen, ignore ini resolution/pos if needed
+	inst->windowMode = WindowMode::Fullscreen;
+	inst->windowPos = { 0, 0 };
+	inst->windowSize = { 0, 0 };
+	inst->windowSizeClient = { 0, 0 };
+
+	bool center = true;
 
 	inst->WindowCalculateGeometry(center);
 	inst->WindowUpdateTitle();
+
+
 
 	WNDCLASSA wndClass;
 	wndClass.hInstance = hInstance;
@@ -84,10 +93,7 @@ HWND __stdcall WindowedMode::InitWindow(DWORD dwExStyle, LPCSTR lpClassName, LPC
 		hInstance,
 		0);
 
-	if (maximize)
-		PostMessage(inst->window, WM_SYSCOMMAND, SC_MAXIMIZE, 0); // maximize and perofm updates
-	else if (inst->windowMode == WindowMode::Windowed)
-		inst->WindowCalculateGeometry(center, true); // now modern styles border padding can be calculcated
+	inst->WindowCalculateGeometry(center, true);
 
 	UpdateWindow(inst->window);
 	inst->MouseUpdate(true); // lock cursor in the window until main menu appears
@@ -126,48 +132,31 @@ void WindowedMode::InitD3dDevice()
 
 void WindowedMode::InitConfig()
 {
-	auto attr = GetFileAttributes(config.GetIniPath().string().c_str());
-	
-	if (attr == INVALID_FILE_ATTRIBUTES) // does not exists
-		SaveConfig();
+	// Do nothing – ini is ignored
 }
 
 bool WindowedMode::LoadConfig()
 {
-	windowMode = (WindowMode)config.ReadInteger("window", "mode", WindowMode::Windowed);
-	windowMode = std::clamp(windowMode, WindowMode::Min, WindowMode::Max);
+	// Default hardcoded settings
+	windowMode = WindowMode::Fullscreen; // used as borderless fullscreen
+	windowPosWindowed = { -1, -1 };
+	windowSizeWindowed = Resolution_Default;
 
-	bool maximize = config.ReadInteger("window", "maximized", 0) != false;
-
-	windowPosWindowed.x = config.ReadInteger("window", "positionX", -1);
-	windowPosWindowed.y = config.ReadInteger("window", "positionY", -1);
-
-	windowSizeWindowed.x = max(config.ReadInteger("window", "resolutionX", Resolution_Default.x), Resolution_Min.x);
-	windowSizeWindowed.y = max(config.ReadInteger("window", "resolutionY", Resolution_Default.y), Resolution_Min.y);
-	
 	windowPos = windowPosWindowed;
 	windowSize = windowSizeClient = windowSizeWindowed;
-	
-	menuFrameRateLimit = config.ReadInteger("game", "menuFPS", 30);
-	autoPause = config.ReadInteger("game", "autoPause", true) != false;
-	autoResume = config.ReadInteger("game", "autoResume", true) != false;
 
-	return maximize;
+	menuFrameRateLimit = 0;
+	autoPause = false;
+	autoResume = false;
+
+	return false; // not maximized
 }
 
 void WindowedMode::SaveConfig()
 {
-	config.WriteString("window", "mode",		StringPrintf("%d\t\t\t; 1: window, 2: window borderless, 3: fullscreen", windowMode));
-	config.WriteString("window", "maximized",	StringPrintf("%d", IsZoomed(window)));
-	config.WriteString("window", "positionX",	StringPrintf("%d\t; -1: centered", windowPosWindowed.x));
-	config.WriteString("window", "positionY",	StringPrintf("%d\t; -1: centered", windowPosWindowed.y));
-	config.WriteString("window", "resolutionX",	StringPrintf("%d", windowSizeWindowed.x));
-	config.WriteString("window", "resolutionY",	StringPrintf("%d", windowSizeWindowed.y));
-	
-	config.WriteString("game", "menuFPS",		StringPrintf("%d\t\t; frame rate limit for main menu. 0: unlimited", menuFrameRateLimit));
-	config.WriteString("game", "autoPause",		StringPrintf("%d\t\t; pause the game on window deactivation", autoPause));
-	config.WriteString("game", "autoResume",	StringPrintf("%d\t; resume the game on window activation", autoResume));
+	// Do nothing – no ini saving anymore
 }
+
 
 int WindowedMode::FindAspectRatio(POINT resolution, float treshold)
 {
@@ -193,8 +182,9 @@ DWORD WindowedMode::WindowStyle() const
 {
 	return WS_VISIBLE | WS_CLIPSIBLINGS | ((windowMode == WindowMode::Windowed) ?
 		WS_OVERLAPPEDWINDOW :
-		WS_POPUP);
+		WS_POPUP); // <- to jest borderless
 }
+
 
 DWORD WindowedMode::WindowStyleEx() const
 {
@@ -348,34 +338,16 @@ void WindowedMode::WindowCalculateGeometry(bool center, bool resizeWindow)
 
 void WindowedMode::WindowResize(POINT resolution)
 {
-	if (windowMode == WindowMode::Fullscreen)
-		windowMode = WindowMode::Windowed;
-
+	// Keep fullscreen mode, just update client size info
 	windowSizeWindowed = resolution;
-	WindowCalculateGeometry(false, true); // and resize the window
-	SaveConfig();
+	WindowCalculateGeometry(false, true);
+	SaveConfig(); // no-op now
 }
+
 
 void WindowedMode::WindowModeCycle()
 {
-	if (IsIconic(window)) return; // minimized
 
-	if (!HasFocus(window)) return; // window inactive
-
-	if (IsZoomed(window)) // maximized
-	{
-		windowMode = WindowedMode::Min;
-		ShowWindow(window, SW_RESTORE);
-	}
-	else
-	{
-		BYTE& mode = *(BYTE*)&windowMode;
-		mode += 1;
-		if (mode > WindowedMode::Max) mode = WindowedMode::Min;
-	}
-
-	WindowCalculateGeometry(false, true);
-	SaveConfig();
 }
 
 void WindowedMode::WindowUpdateTitle()
@@ -408,49 +380,38 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 	switch (msg)
 	{
 		// window focus/defocus
-		case WM_ACTIVATE:
+				// window focus/defocus
+// window focus/defocus
+		// window focus/defocus
+	case WM_ACTIVATE:
+	{
+		auto result = (LOWORD(wParam) == WA_INACTIVE) ?
+			DefWindowProc(wnd, msg, wParam, lParam) :
+			CallWindowProc(inst->oriWindowProc, wnd, msg, wParam, lParam);
+
+		bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+		bool altTabMinimize = (LOWORD(wParam) == WA_INACTIVE) && altDown;
+
+		if (altTabMinimize)
 		{
-			auto result = (LOWORD(wParam) == WA_INACTIVE) ?
-				DefWindowProc(wnd, msg, wParam, lParam) : // don't pause game on defocus
-				CallWindowProc(inst->oriWindowProc, wnd, msg, wParam, lParam);
+			ShowWindow(wnd, SW_MINIMIZE);
 
-			// handle automatic pause/resume
-			if (inst->gameState == Playing_Game)
-			{
-				switch(LOWORD(wParam))
-				{
-					case WA_INACTIVE:
-						if (inst->autoPause && !inst->IsMainMenuVisible())
-						{
-							inst->SwitchMainMenu(true);
-							inst->autoPauseExecuted = true;
-						}
-						break;
-
-					case WA_CLICKACTIVE: // mouse click
-						if (!IsCursorInClientRect(wnd))
-						{
-							inst->autoPauseExecuted = false;
-							break; // user clicked on the window caption or edge
-						}
-						[[fallthrough]];
-
-					case WA_ACTIVE:
-						if (inst->autoResume && 
-							(!inst->autoPause || inst->autoPauseExecuted) && 
-							inst->IsMainMenuVisible()) // TODO: check if not in some submenu
-						{
-							inst->autoPauseExecuted = false;
-							inst->SwitchMainMenu(false);
-						}
-						break;
-				}
-			}
-
-			inst->WindowUpdateTitle();
-			inst->MouseUpdate(true);
-			return result;
+			if (inst->gameState == Playing_Game && !inst->IsMainMenuVisible())
+				inst->SwitchMainMenu(true);
 		}
+
+		inst->WindowUpdateTitle();
+
+		// don't touch mouse on Alt+Tab minimize
+		if (!altTabMinimize)
+			inst->MouseUpdate(true);
+
+		return result;
+	}
+
+
+
+
 
 		// don't pause game on defocus
 		case WM_SETFOCUS:
@@ -463,6 +424,7 @@ LRESULT APIENTRY WindowedMode::WindowProc(HWND wnd, UINT msg, WPARAM wParam, LPA
 
 		// do not send keyboard events to the inactive window
 		case WM_KEYDOWN:
+
 		case WM_SYSKEYDOWN:
 		{
 			if (!HasFocus(wnd))
@@ -800,6 +762,10 @@ void WindowedMode::SwitchMainMenu(bool show)
 
 void WindowedMode::MouseUpdate(bool force)
 {
+	// Do nothing when window is minimized – don't touch cursor
+	if (IsIconic(window))
+		return;
+
 	auto hasFocus = HasFocus(window);
 
 	POINT pos;
